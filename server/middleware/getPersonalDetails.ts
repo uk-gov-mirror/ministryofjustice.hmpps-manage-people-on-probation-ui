@@ -12,6 +12,7 @@ import { tierLink, toRoshWidget } from '../utils'
 import { SentencePlan } from '../models/Risk'
 import logger from '../../logger'
 import { PersonalDetails, ProfessionalContact } from '../data/model/personalDetails'
+import { ErrorSummary } from '../data/model/common'
 import { RiskSummary } from '../data/model/risk'
 import { UserCaseload } from '../data/model/caseload'
 import { ProbationPractitioner } from '../models/CaseDetail'
@@ -43,8 +44,10 @@ export const getPersonalDetails = (
       const tierClient = new TierApiClient(token)
       const arnsAssessmentPlatformClient = new ArnsAssessmentPlatformApiClient(token)
       const authOptions = asUser(res.locals.user.token)
-      // Failure isolation (MAN-2840) is only applied for the new person-header - the legacy
-      // header keeps its original behaviour, where an ARNS/Prisons failure fails the whole page.
+      // Failure isolation (MAN-2840) is gated behind enablePersonHeader: when off, an ARNS
+      // failure fails the whole page - the legacy header's original behaviour, unchanged here.
+      // The Prisons photo fetch below has always been caught defensively regardless of this
+      // flag - only whether prisonsUnavailable is reported (and the mojAlert shown) is gated.
       const isolateApiFailures = res.locals.flags?.enablePersonHeader
       const risksPromise = arnsClient.getRisks(crn)
       const riskDataPromise = arnsComponents.getRiskData(authOptions, 'crn', crn)
@@ -68,6 +71,20 @@ export const getPersonalDetails = (
           masClient.getProbationPractitioner(crn),
           masClient.getContacts(crn).catch((): ProfessionalContact | null => null),
         ])
+      if (isolateApiFailures) {
+        // ArnsApiClient.getRisks resolves an error-summary object (not a rejection) for
+        // 401/500 responses - detect that shape the same way server/controllers/alerts.ts does.
+        if (risks && (risks as unknown as ErrorSummary).errors !== undefined) {
+          arnsUnavailable = true
+          risks = null as unknown as RiskSummary
+        }
+        // ArnsComponents.getRiskData resolves { assessments: [], httpStatus } for any failure
+        // (including 401/500) instead of rejecting - httpStatus 404 is a legitimate "no data".
+        if (riskData && riskData.httpStatus !== 200 && riskData.httpStatus !== 404) {
+          arnsUnavailable = true
+          riskData = null as unknown as RiskData
+        }
+      }
       if (overview.noms) {
         // The photo fetch has always been caught defensively, regardless of enablePersonHeader -
         // only whether we report prisonsUnavailable (and show the mojAlert) is flag-gated.
@@ -95,23 +112,28 @@ export const getPersonalDetails = (
           logger.error(error, 'Failed to connect to Assessment Platform API.')
         }
       }
-      req.session.data = {
-        ...(req?.session?.data ?? {}),
-        personalDetails: {
-          ...(req?.session?.data?.personalDetails ?? {}),
-          [crn]: {
-            overview,
-            sentencePlan,
-            risks,
-            tierCalculation,
-            riskData,
-            probationPractitioner,
-            professionalContact,
-            personPhotoSrc,
-            arnsUnavailable,
-            prisonsUnavailable,
+      // Don't cache a degraded result - an ARNS/Prisons failure is transient, so the next
+      // request for this CRN should retry rather than being stuck with the failure for the
+      // rest of the session.
+      if (!arnsUnavailable && !prisonsUnavailable) {
+        req.session.data = {
+          ...(req?.session?.data ?? {}),
+          personalDetails: {
+            ...(req?.session?.data?.personalDetails ?? {}),
+            [crn]: {
+              overview,
+              sentencePlan,
+              risks,
+              tierCalculation,
+              riskData,
+              probationPractitioner,
+              professionalContact,
+              personPhotoSrc,
+              arnsUnavailable,
+              prisonsUnavailable,
+            },
           },
-        },
+        }
       }
     } else {
       ;({
