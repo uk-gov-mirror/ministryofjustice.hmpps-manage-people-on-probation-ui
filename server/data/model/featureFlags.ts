@@ -36,4 +36,6 @@ export class FeatureFlags {
   enableAttendeeUpdates?: boolean = undefined
   enableEsupEligibilityCheck?: boolean = undefined
   showContactInformationWarning?: boolean = undefined
+  enableAllowSms?: boolean = undefined
+  enableLastTextMessage?: boolean = undefined
 }
