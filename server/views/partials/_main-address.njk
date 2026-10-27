@@ -26,16 +26,16 @@
   </p>
   <p class="govuk-!-margin-top-2 govuk-!-margin-bottom-0">
     <span class="govuk-summary-list__key govuk-!-padding-bottom-0" data-qa="mainAddressNotesLabel">Notes</span>
-    <span data-qa="mainAddressNotesValue">
-      {% if mainAddress.addressNotes.length %}
-        {% for addressNote in mainAddress.addressNotes %}
-          {{ appNote(addressNote, "/case/" + crn + "/personal-details/main-address/note/" + addressNote.id) }}
-        {% endfor %}
-      {% else %}
-        No notes
-      {% endif %}
-    </span>
   </p>
+  <div data-qa="mainAddressNotesValue">
+  {% if mainAddress.addressNotes.length %}
+    {% for addressNote in mainAddress.addressNotes %}
+      {{ appNote(addressNote, "/case/" + crn + "/personal-details/main-address/note/" + addressNote.id) }}
+    {% endfor %}
+  {% else %}
+    No notes
+  {% endif %}
+  </div>
 {% else %}
   No main address
 {% endif %}
